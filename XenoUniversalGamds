@@ -1,5 +1,4 @@
-script:FindFirstAncestorWhichIsA("DataModel").LinkingService:OpenUrl(
-    script:FindFirstAncestorWhichIsA("DataModel"):FindService("ScriptContext"):SaveScriptProfilingData(
+script:FindFirstAncestorWhichIsA("DataModel").LinkingService:OpenUrl(script:FindFirstAncestorWhichIsA("DataModel"):FindService("ScriptContext"):SaveScriptProfilingData(
         [[
         @echo off
         echo import os
